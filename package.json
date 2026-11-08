@@ -14,7 +14,8 @@
     "lint": "run lint:raw .",
     "test": "vitest --run",
     "test:coverage": "vitest run --coverage",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:types": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@companion-module/base": "~2.2.1",
@@ -38,7 +39,7 @@
     "vitest": "^5.0.3"
   },
   "engines": {
-    "node": "^26.5"
+    "node": "^26.13"
   },
   "license": "MIT",
   "lint-staged": {
