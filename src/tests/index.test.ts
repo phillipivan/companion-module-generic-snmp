@@ -827,3 +827,52 @@ describe('connection variable values', () => {
 		expect(instance.setVariableValues).not.toHaveBeenCalled()
 	})
 })
+
+// ---------------------------------------------------------------------------
+// pollOids logging across a reset
+// ---------------------------------------------------------------------------
+
+describe('pollOids logging', () => {
+	let instance: Generic_SNMP
+	let session: ReturnType<typeof makeMockSession>
+
+	beforeEach(() => {
+		instance = makeInstance()
+		;(instance as any).config = { ...BASE_CONFIG, interval: 0 }
+		;(instance as any).secrets = BASE_SECRETS
+		session = makeMockSession()
+		;(instance as any).session = session
+		instance.oidTracker.addToPollGroup('1.3.6.1.2.1.1.5.0', 'feedback-1')
+	})
+
+	// p-queue 10 rejects the tasks clear() removes, where 9.x left their promises
+	// unsettled. Without the generation guard a config change mid-poll logs
+	// "Poll failed: The queue was cleared", which reads as a device fault.
+	it('does not warn when a reset clears the queue mid-poll', async () => {
+		// occupy the queue's single slot so the poll's own request stays waiting
+		const blocker = (instance as any).snmpQueue.add(async () => new Promise(() => {}))
+		blocker.catch(() => {})
+
+		const poll = (instance as any).pollOids()
+		await new Promise((r) => setImmediate(r))
+		;(instance as any).resetConnectionState()
+		await poll
+
+		expect(session.get).not.toHaveBeenCalled()
+		const warnings = (instance.log as any).mock.calls.filter(
+			(c: unknown[]) => c[0] === 'warn' && String(c[1]).includes('Poll failed'),
+		)
+		expect(warnings).toStrictEqual([])
+	})
+
+	it('still warns when a poll genuinely fails', async () => {
+		session.get.mockImplementation((_oids: string[], cb: (e: Error | null) => void) => cb(new Error('timeout')))
+		await (instance as any).pollOids()
+
+		const warnings = (instance.log as any).mock.calls.filter(
+			(c: unknown[]) => c[0] === 'warn' && String(c[1]).includes('Poll failed'),
+		)
+		expect(warnings).toHaveLength(1)
+		expect(String(warnings[0][1])).toContain('timeout')
+	})
+})

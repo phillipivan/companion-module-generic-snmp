@@ -152,7 +152,10 @@ export default class Generic_SNMP extends InstanceBase<ModuleTypes> implements I
 					await this.walk(oid)
 					this.log('info', `Walk of ${oid} complete!`)
 				} catch (err) {
-					this.log('warn', `Walk failed - ${err instanceof Error ? err.message : String(err)}`)
+					// As in pollOids: a cleared queue rejects this walk when the config
+					// changes mid-walk, which is not a failure worth warning about
+					if (generation === this.pollGeneration)
+						this.log('warn', `Walk failed - ${err instanceof Error ? err.message : String(err)}`)
 				}
 			}
 		}
@@ -644,7 +647,12 @@ export default class Generic_SNMP extends InstanceBase<ModuleTypes> implements I
 			try {
 				await this.getOid(oids)
 			} catch (err) {
-				this.log('warn', `Poll failed: ${err instanceof Error ? err.message : String(err)}`)
+				// p-queue 10 rejects the waiting tasks that clear() removes, so a poll in
+				// flight when configUpdated() or destroy() runs lands here. That is
+				// deliberate teardown, not a device failure, and the generation bump is
+				// what tells them apart. On 9.x those promises never settled at all.
+				if (generation === this.pollGeneration)
+					this.log('warn', `Poll failed: ${err instanceof Error ? err.message : String(err)}`)
 			}
 		}
 
